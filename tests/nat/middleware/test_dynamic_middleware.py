@@ -178,7 +178,7 @@ def auth_provider_client():
 def create_function_context(name: str = "test_function",
                             config: dict | None = None,
                             description: str = "Test function"):
-    """Helper to create FunctionMiddlewareContext."""
+    """Helper to create FunctionMiddlewareContext (static metadata only)."""
     from nat.middleware.middleware import FunctionMiddlewareContext
     return FunctionMiddlewareContext(
         name=name,
@@ -188,53 +188,6 @@ def create_function_context(name: str = "test_function",
         single_output_schema=type(None),
         stream_output_schema=type(None),
     )
-
-
-@pytest.fixture
-def tracking_policy():
-    """Factory fixture to create tracking policies."""
-    from nat.data_models.function_policy import FunctionPolicyBaseConfig
-    from nat.function_policy.interface import FunctionPolicyBase
-    from nat.function_policy.interface import PostInvokeContext
-    from nat.function_policy.interface import PreInvokeContext
-
-    def create(name: str,
-               execution_tracker: list,
-               enabled: bool = True,
-               pre_invoke_error=None,
-               post_invoke_error=None,
-               modify_input=None,
-               modify_output=None):
-        _pre_invoke_error = pre_invoke_error
-        _post_invoke_error = post_invoke_error
-        _modify_input = modify_input
-        _modify_output = modify_output
-        _name = name
-        _tracker = execution_tracker
-
-        class TrackingPolicy(FunctionPolicyBase[FunctionPolicyBaseConfig]):
-
-            async def on_pre_invoke(self, context: PreInvokeContext) -> tuple | None:
-                _tracker.append(f"{_name}_pre")
-                if _pre_invoke_error:
-                    raise _pre_invoke_error
-                if _modify_input:
-                    # Modify first arg, return same length tuple
-                    modified_first = _modify_input(context.function_args[0] if context.function_args else None)
-                    return (modified_first, ) + context.function_args[1:]
-                return context.function_args
-
-            async def on_post_invoke(self, context: PostInvokeContext):
-                _tracker.append(f"{_name}_post")
-                if _post_invoke_error:
-                    raise _post_invoke_error
-                if _modify_output:
-                    return _modify_output(context.function_output)
-                return context.function_output
-
-        return TrackingPolicy(config=FunctionPolicyBaseConfig(enabled=enabled), name=name)
-
-    return create
 
 
 # ==================== Middleware Invoke/Stream Tests ====================
@@ -257,82 +210,6 @@ async def test_middleware_invoke_calls_next_with_no_policies(mock_builder):
     assert result == expected_output
 
 
-async def test_middleware_invoke_executes_pre_invoke_policies(mock_builder, tracking_policy):
-    """Test that pre-invoke policies are executed and can modify input."""
-    execution_tracker = []
-
-    def add_marker(input_val):
-        if isinstance(input_val, dict):
-            return {**input_val, "policy_executed": True}
-        return input_val
-
-    policy = tracking_policy("test", execution_tracker, modify_input=add_marker)
-
-    config = DynamicMiddlewareConfig(register_workflow_functions=False, pre_invoke_policy=[])
-    middleware = DynamicFunctionMiddleware(config=config, builder=mock_builder)
-    middleware._pre_invoke_policies = [policy]
-
-    test_input = {"value": "test"}
-    received_input = None
-
-    async def mock_call_next(*args, **kwargs):
-        nonlocal received_input
-        received_input = args[0] if args else None
-        return {"result": "success"}
-
-    context = create_function_context()
-    await middleware.function_middleware_invoke(test_input, call_next=mock_call_next, context=context)
-
-    assert received_input is not None
-    assert received_input.get("policy_executed") is True
-
-
-async def test_middleware_invoke_executes_post_invoke_policies(mock_builder, tracking_policy):
-    """Test that post-invoke policies are executed and can modify output."""
-    execution_tracker = []
-
-    def add_marker(output_val):
-        if isinstance(output_val, dict):
-            return {**output_val, "policy_executed": True}
-        return output_val
-
-    policy = tracking_policy("test", execution_tracker, modify_output=add_marker)
-
-    config = DynamicMiddlewareConfig(register_workflow_functions=False, post_invoke_policy=[])
-    middleware = DynamicFunctionMiddleware(config=config, builder=mock_builder)
-    middleware._post_invoke_policies = [policy]
-
-    async def mock_call_next(*args, **kwargs):
-        return {"result": "success"}
-
-    context = create_function_context()
-    result = await middleware.function_middleware_invoke({}, call_next=mock_call_next, context=context)
-
-    assert result.get("policy_executed") is True
-
-
-async def test_middleware_invoke_policy_execution_order(mock_builder, tracking_policy):
-    """Test that policies execute in the correct order: pre -> function -> post."""
-    execution_tracker = []
-
-    policy1 = tracking_policy("policy1", execution_tracker)
-    policy2 = tracking_policy("policy2", execution_tracker)
-
-    config = DynamicMiddlewareConfig(register_workflow_functions=False, pre_invoke_policy=[], post_invoke_policy=[])
-    middleware = DynamicFunctionMiddleware(config=config, builder=mock_builder)
-    middleware._pre_invoke_policies = [policy1, policy2]
-    middleware._post_invoke_policies = [policy1, policy2]
-
-    async def mock_call_next(*args, **kwargs):
-        execution_tracker.append("function")
-        return {"result": "done"}
-
-    context = create_function_context()
-    await middleware.function_middleware_invoke({}, call_next=mock_call_next, context=context)
-
-    assert execution_tracker == ["policy1_pre", "policy2_pre", "function", "policy1_post", "policy2_post"]
-
-
 async def test_middleware_stream_calls_next_with_no_policies(mock_builder):
     """Test that stream delegates to call_next when no policies are configured."""
     config = DynamicMiddlewareConfig(register_workflow_functions=False)
@@ -350,97 +227,6 @@ async def test_middleware_stream_calls_next_with_no_policies(mock_builder):
         chunks.append(chunk)
 
     assert chunks == ["chunk1", "chunk2", "chunk3"]
-
-
-# ==================== Policy Error Handling Tests ====================
-
-
-async def test_middleware_skips_failing_pre_invoke_policy(mock_builder, tracking_policy):
-    """Test that middleware skips a failing pre-invoke policy and continues."""
-    execution_tracker = []
-    failing_policy = tracking_policy("failing", execution_tracker, pre_invoke_error=ValueError("Policy failed"))
-
-    config = DynamicMiddlewareConfig(register_workflow_functions=False, pre_invoke_policy=[])
-    middleware = DynamicFunctionMiddleware(config=config, builder=mock_builder)
-    middleware._pre_invoke_policies = [failing_policy]
-
-    test_input = {"value": "test"}
-    expected_output = {"result": "success"}
-
-    async def mock_call_next(*args, **kwargs):
-        assert args[0] == test_input
-        return expected_output
-
-    context = create_function_context()
-    result = await middleware.function_middleware_invoke(test_input, call_next=mock_call_next, context=context)
-    assert result == expected_output
-
-
-async def test_middleware_skips_failing_post_invoke_policy(mock_builder, tracking_policy):
-    """Test that middleware skips a failing post-invoke policy and continues."""
-    execution_tracker = []
-    failing_policy = tracking_policy("failing", execution_tracker, post_invoke_error=ValueError("Policy failed"))
-
-    config = DynamicMiddlewareConfig(register_workflow_functions=False, post_invoke_policy=[])
-    middleware = DynamicFunctionMiddleware(config=config, builder=mock_builder)
-    middleware._post_invoke_policies = [failing_policy]
-
-    function_output = {"result": "success"}
-
-    async def mock_call_next(*args, **kwargs):
-        return function_output
-
-    context = create_function_context()
-    result = await middleware.function_middleware_invoke({}, call_next=mock_call_next, context=context)
-    assert result == function_output
-
-
-async def test_middleware_continues_with_working_policies_after_failure(mock_builder, tracking_policy):
-    """Test that middleware continues with remaining policies after one fails."""
-    execution_tracker = []
-
-    failing_policy = tracking_policy("failing", execution_tracker, pre_invoke_error=ValueError("Policy failed"))
-    working_policy = tracking_policy("working", execution_tracker)
-
-    config = DynamicMiddlewareConfig(register_workflow_functions=False, pre_invoke_policy=[])
-    middleware = DynamicFunctionMiddleware(config=config, builder=mock_builder)
-    middleware._pre_invoke_policies = [failing_policy, working_policy]
-
-    async def mock_call_next(*args, **kwargs):
-        return {"result": "success"}
-
-    context = create_function_context()
-    await middleware.function_middleware_invoke({}, call_next=mock_call_next, context=context)
-
-    assert "failing_pre" in execution_tracker
-    assert "working_pre" in execution_tracker
-
-
-# ==================== Policy Disabled Tests ====================
-
-
-async def test_middleware_skips_disabled_policies(mock_builder, tracking_policy):
-    """Test that middleware skips disabled policies."""
-    execution_tracker = []
-
-    disabled_policy = tracking_policy("disabled", execution_tracker, enabled=False)
-    enabled_policy = tracking_policy("enabled", execution_tracker, enabled=True)
-
-    config = DynamicMiddlewareConfig(register_workflow_functions=False, pre_invoke_policy=[], post_invoke_policy=[])
-    middleware = DynamicFunctionMiddleware(config=config, builder=mock_builder)
-    middleware._pre_invoke_policies = [disabled_policy, enabled_policy]
-    middleware._post_invoke_policies = [disabled_policy, enabled_policy]
-
-    async def mock_call_next(*args, **kwargs):
-        return {"result": "success"}
-
-    context = create_function_context()
-    await middleware.function_middleware_invoke({}, call_next=mock_call_next, context=context)
-
-    assert "disabled_pre" not in execution_tracker
-    assert "disabled_post" not in execution_tracker
-    assert "enabled_pre" in execution_tracker
-    assert "enabled_post" in execution_tracker
 
 
 # ==================== Component Discovery Tests ====================

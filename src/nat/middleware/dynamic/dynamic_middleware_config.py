@@ -23,7 +23,6 @@ from pydantic import model_validator
 from nat.data_models.component import ComponentGroup
 from nat.data_models.component_ref import AuthenticationRef
 from nat.data_models.component_ref import EmbedderRef
-from nat.data_models.component_ref import FunctionPolicyRef
 from nat.data_models.component_ref import LLMRef
 from nat.data_models.component_ref import MemoryRef
 from nat.data_models.component_ref import ObjectStoreRef
@@ -82,7 +81,7 @@ class DynamicMiddlewareConfig(FunctionMiddlewareBaseConfig, name="dynamic_middle
     Supports explicit component references and auto-discovery flags.
     """
 
-    # === First-Class Component References ===
+    # === Component References ===
 
     llms: list[LLMRef] | None = Field(default_factory=list, description="LLMs to intercept")
 
@@ -123,13 +122,9 @@ class DynamicMiddlewareConfig(FunctionMiddlewareBaseConfig, name="dynamic_middle
     register_workflow_functions: bool | None = Field(default=False,
                                                      description="Auto-discover and register all workflow functions")
 
-    # === Policy Configuration ===
+    # === Enable/Disable ===
 
-    pre_invoke_policy: list[FunctionPolicyRef] | None = Field(
-        default_factory=list, description="Policies to run before function execution (in order)")
-
-    post_invoke_policy: list[FunctionPolicyRef] | None = Field(
-        default_factory=list, description="Policies to run after function execution (in order)")
+    enabled: bool = Field(default=True, description="Whether this middleware is active")
 
     # === Component Function Allowlists ===
 

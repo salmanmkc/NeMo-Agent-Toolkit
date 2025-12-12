@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import AsyncIterator
 from collections.abc import Callable
 from typing import Any
 
@@ -25,15 +24,12 @@ from nat.builder.builder import Builder
 from nat.builder.function import Function
 from nat.data_models.component import ComponentGroup
 from nat.data_models.component_ref import FunctionRef
-from nat.function_policy.interface import FunctionPolicyBase
-from nat.function_policy.interface import PostInvokeContext
-from nat.function_policy.interface import PreInvokeContext
 from nat.middleware.dynamic.dynamic_middleware_config import DynamicMiddlewareConfig
-from nat.middleware.function_middleware import CallNext
-from nat.middleware.function_middleware import CallNextStream
 from nat.middleware.function_middleware import FunctionMiddleware
 from nat.middleware.function_middleware import FunctionMiddlewareChain
 from nat.middleware.middleware import FunctionMiddlewareContext
+from nat.middleware.middleware import PostInvokeContext
+from nat.middleware.middleware import PreInvokeContext
 from nat.middleware.utils.workflow_inventory import COMPONENT_FUNCTION_ALLOWLISTS
 from nat.middleware.utils.workflow_inventory import DiscoveredComponent
 from nat.middleware.utils.workflow_inventory import DiscoveredFunction
@@ -61,13 +57,6 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         self._config = config
         self._builder = builder
 
-        self._pre_invoke_policies: list[FunctionPolicyBase] = [
-            self._get_policy_instance(builder, ref) for ref in (config.pre_invoke_policy or [])
-        ]
-        self._post_invoke_policies: list[FunctionPolicyBase] = [
-            self._get_policy_instance(builder, ref) for ref in (config.post_invoke_policy or [])
-        ]
-
         self._registered_callables: dict[str, RegisteredFunction | RegisteredComponentMethod] = {}
 
         self._builder_get_llm: Callable | None = None
@@ -84,25 +73,57 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
 
         self._discover_workflow()
 
-    def _get_policy_instance(self, builder: Any, ref: Any) -> FunctionPolicyBase:
-        """Retrieve a policy instance from the builder by reference.
+    # ==================== FunctionMiddleware Interface Implementation ====================
+
+    @property
+    def enabled(self) -> bool:
+        """Whether this middleware should execute.
+
+        Returns config.enabled value. Framework checks this before invoking
+        any middleware methods.
+        """
+        return self._config.enabled
+
+    async def pre_invoke(self, context: PreInvokeContext) -> PreInvokeContext | None:
+        """Transform inputs before function execution.
+
+        Default implementation passes through unchanged. Override in subclass
+        to add input transformation logic.
 
         Args:
-            builder: The workflow builder containing registered policies
-            ref: Policy reference (name) to look up
+            context: Pre-invoke context (Pydantic model) containing:
+                - function_context: Static function metadata (frozen)
+                - original_args: What entered the middleware chain (frozen)
+                - original_kwargs: What entered the middleware chain (frozen)
+                - args: Current args (mutable)
+                - kwargs: Current kwargs (mutable)
 
         Returns:
-            The policy instance
-
-        Raises:
-            ValueError: If the referenced policy is not registered in the builder
+            PreInvokeContext: Return the (modified) context to signal changes
+            None: Pass through unchanged (framework uses current context state)
         """
-        policy_name = str(ref)
-        if policy_name not in builder._function_policies:
-            available = list(builder._function_policies.keys())
-            raise ValueError(f"Function policy '{policy_name}' not found. "
-                             f"Available policies: {available if available else 'none registered'}")
-        return builder._function_policies[policy_name].instance
+        return None
+
+    async def post_invoke(self, context: PostInvokeContext) -> PostInvokeContext | None:
+        """Transform output after function execution.
+
+        Default implementation passes through unchanged. Override in subclass
+        to add output transformation logic.
+
+        Args:
+            context: Post-invoke context (Pydantic model) containing:
+                - function_context: Static function metadata (frozen)
+                - original_args: What entered the middleware chain (frozen)
+                - original_kwargs: What entered the middleware chain (frozen)
+                - args: What the function received (frozen)
+                - kwargs: What the function received (frozen)
+                - output: Current output value (mutable)
+
+        Returns:
+            PostInvokeContext: Return the (modified) context to signal changes
+            None: Pass through unchanged (framework uses current context.output)
+        """
+        return None
 
     # ==================== Component Discovery and Registration ====================
 
@@ -670,6 +691,7 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         single_output_schema = self._extract_component_attributes(discovered, 'single_output_schema')
         stream_output_schema = self._extract_component_attributes(discovered, 'streaming_output_schema')
 
+        # Create static metadata context (original args/kwargs captured by orchestration)
         context = FunctionMiddlewareContext(name=function_name,
                                             config=component_config,
                                             description=description,
@@ -731,149 +753,6 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
             return value
         except Exception:
             return None
-
-    # ==================== Policy Orchestration ====================
-
-    async def function_middleware_invoke(self,
-                                         *args: Any,
-                                         call_next: CallNext,
-                                         context: FunctionMiddlewareContext,
-                                         **kwargs: Any) -> Any:
-        """Execute function with policy orchestration for single-output.
-
-        Runs pre-invoke policies, calls the function, then runs post-invoke policies.
-        Each policy can transform the input/output.
-
-        Args:
-            *args: Positional arguments
-            call_next: Next middleware or function
-            context: Function metadata
-            **kwargs: Additional function arguments
-
-        Returns:
-            The output from the function
-        """
-        # PRE-INVOKE: Build transformation chain through policies
-        pre_context = PreInvokeContext(function_context=context,
-                                       original_args=args,
-                                       function_args=args,
-                                       function_kwargs=kwargs)
-
-        for policy in self._pre_invoke_policies:
-            if not policy.config.enabled:
-                continue
-
-            try:
-                modified_args = await policy.on_pre_invoke(pre_context)
-
-                if modified_args is not None:
-                    if len(modified_args) != len(pre_context.function_args):
-                        raise ValueError(f"Policy '{policy.name}' returned {len(modified_args)} args, "
-                                         f"expected {len(pre_context.function_args)}")
-                    pre_context.function_args = modified_args
-            except Exception:
-                logger.exception("Pre-invoke policy '%s' failed for function '%s' - skipping policy and continuing",
-                                 policy.name,
-                                 context.name)
-
-        # INVOKE: Call actual function with transformed args
-        output = await call_next(*pre_context.function_args, **kwargs)
-
-        # POST-INVOKE: Build transformation chain through policies
-        post_context = PostInvokeContext(function_context=context,
-                                         original_args=args,
-                                         function_args=pre_context.function_args,
-                                         function_kwargs=kwargs,
-                                         function_output=output)
-
-        for policy in self._post_invoke_policies:
-            if not policy.config.enabled:
-                continue
-
-            try:
-                modified_output = await policy.on_post_invoke(post_context)
-
-                if modified_output is not None:
-                    post_context.function_output = modified_output
-            except Exception:
-                logger.exception("Post-invoke policy '%s' failed for function '%s' - skipping policy and continuing",
-                                 policy.name,
-                                 context.name)
-
-        return post_context.function_output
-
-    async def function_middleware_stream(self,
-                                         *args: Any,
-                                         call_next: CallNextStream,
-                                         context: FunctionMiddlewareContext,
-                                         **kwargs: Any) -> AsyncIterator[Any]:
-        """Execute function with policy orchestration for streaming.
-
-        Pre-invoke policies run once before streaming starts. Post-invoke policies
-        apply to each chunk as it streams.
-
-        Args:
-            *args: Positional arguments
-            call_next: Next middleware or streaming function
-            context: Function metadata
-            **kwargs: Additional function arguments
-
-        Yields:
-            Stream chunks (possibly transformed by policies)
-        """
-        # PRE-INVOKE: Build transformation chain through policies
-        pre_context = PreInvokeContext(function_context=context,
-                                       original_args=args,
-                                       function_args=args,
-                                       function_kwargs=kwargs)
-
-        for policy in self._pre_invoke_policies:
-            if not policy.config.enabled:
-                continue
-
-            try:
-                modified_args = await policy.on_pre_invoke(pre_context)
-
-                if modified_args is not None:
-                    if len(modified_args) != len(pre_context.function_args):
-                        raise ValueError(f"Policy '{policy.name}' returned {len(modified_args)} args, "
-                                         f"expected {len(pre_context.function_args)}")
-                    pre_context.function_args = modified_args
-            except Exception:
-                logger.exception(
-                    "Pre-invoke policy '%s' failed for streaming function '%s' - "
-                    "skipping policy and continuing",
-                    policy.name,
-                    context.name)
-
-        # STREAM: Call function with transformed args and yield chunks
-        async for chunk in call_next(*pre_context.function_args, **kwargs):
-
-            # POST-INVOKE: Build transformation chain through policies for each chunk
-            post_context = PostInvokeContext(function_context=context,
-                                             original_args=args,
-                                             function_args=pre_context.function_args,
-                                             function_kwargs=kwargs,
-                                             function_output=chunk)
-
-            for policy in self._post_invoke_policies:
-                if not policy.config.enabled:
-                    continue
-
-                try:
-                    modified_chunk = await policy.on_post_invoke(post_context)
-
-                    if modified_chunk is not None:
-                        post_context.function_output = modified_chunk
-
-                except Exception:
-                    logger.exception(
-                        "Post-invoke policy '%s' failed for chunk in streaming function '%s' - "
-                        "skipping policy and continuing",
-                        policy.name,
-                        context.name)
-
-            yield post_context.function_output
 
     # ==================== Helper Methods ====================
 

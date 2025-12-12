@@ -52,7 +52,6 @@ from nat.data_models.config import Config
 from nat.data_models.embedder import EmbedderBaseConfig
 from nat.data_models.function import FunctionBaseConfig
 from nat.data_models.function import FunctionGroupBaseConfig
-from nat.data_models.function_policy import FunctionPolicyBaseConfig
 from nat.data_models.llm import LLMBaseConfig
 from nat.data_models.memory import MemoryBaseConfig
 from nat.data_models.middleware import MiddlewareBaseConfig
@@ -184,7 +183,6 @@ def test_group_from_component():
         EmbedderBaseConfig: ComponentGroup.EMBEDDERS,
         FunctionBaseConfig: ComponentGroup.FUNCTIONS,
         FunctionGroupBaseConfig: ComponentGroup.FUNCTION_GROUPS,
-        FunctionPolicyBaseConfig: ComponentGroup.FUNCTION_POLICIES,
         LLMBaseConfig: ComponentGroup.LLMS,
         MemoryBaseConfig: ComponentGroup.MEMORY,
         MiddlewareBaseConfig: ComponentGroup.MIDDLEWARE,

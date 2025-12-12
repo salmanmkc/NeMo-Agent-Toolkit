@@ -24,12 +24,15 @@ from __future__ import annotations
 
 import dataclasses
 from abc import ABC
+from abc import abstractmethod
 from collections.abc import AsyncIterator
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
 
 #: Type alias for single-output invocation callables.
 CallNext = Callable[..., Awaitable[Any]]
@@ -40,7 +43,7 @@ CallNextStream = Callable[..., AsyncIterator[Any]]
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class FunctionMiddlewareContext:
-    """Context information about the function being wrapped by middleware.
+    """Static metadata about the function being wrapped by middleware.
 
     Middleware receives this context object which describes the function they
     are wrapping. This allows middleware to make decisions based on the
@@ -66,31 +69,75 @@ class FunctionMiddlewareContext:
     """Schema describing streaming outputs or :class:`types.NoneType` when absent."""
 
 
+class PreInvokeContext(BaseModel):
+    """Pre-invoke context with frozen originals and mutable current values.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    # Frozen fields - cannot be modified after creation
+    function_context: FunctionMiddlewareContext = Field(
+        frozen=True, description="Static metadata about the function being invoked (frozen).")
+    original_args: tuple[Any, ...] = Field(
+        frozen=True, description="The original function input arguments before any middleware processing.")
+    original_kwargs: dict[str, Any] = Field(
+        frozen=True, description="The original function input keyword arguments before any middleware processing.")
+
+    # Mutable fields - modify these to transform inputs
+    modified_args: tuple[Any,
+                         ...] = Field(description="The modified function input arguments after middleware processing.")
+    modified_kwargs: dict[str, Any] = Field(
+        description="The modified function input keyword arguments after middleware processing.")
+
+
+class PostInvokeContext(BaseModel):
+    """Post-invoke context with frozen invocation data and mutable output.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    # Frozen fields - the invocation is complete, these are historical
+    function_context: FunctionMiddlewareContext = Field(
+        frozen=True, description="Static metadata about the function being invoked (frozen).")
+    original_args: tuple[Any, ...] = Field(
+        frozen=True, description="The original function input arguments before any middleware processing.")
+    original_kwargs: dict[str, Any] = Field(
+        frozen=True, description="The original function input keyword arguments before any middleware processing.")
+    modified_args: tuple[Any,
+                         ...] = Field(frozen=True,
+                                      description="The modified function input arguments after middleware processing.")
+    modified_kwargs: dict[str, Any] = Field(
+        frozen=True, description="The modified function input keyword arguments after middleware processing.")
+
+    # Mutable field - modify this to transform output
+    output: Any = Field(description="The function output value - modify to transform results.")
+
+
 class Middleware(ABC):
-    """Base class for middleware-style wrapping.
+    """Base class for middleware-style wrapping with pre/post-invoke hooks.
 
     Middleware works like middleware in web frameworks:
 
-    1. **Preprocess**: Inspect and optionally modify inputs
+    1. **Preprocess**: Inspect and optionally modify inputs (via pre_invoke)
     2. **Call Next**: Delegate to the next middleware or the target itself
-    3. **Postprocess**: Process, transform, or augment the output
+    3. **Postprocess**: Process, transform, or augment the output (via post_invoke)
     4. **Continue**: Return or yield the final result
 
     Example::
 
-        class LoggingMiddleware(Middleware):
-            async def middleware_invoke(self, value, call_next, context, **kwargs):
-                # 1. Preprocess
-                print(f"Input: {value}")
+        class LoggingMiddleware(FunctionMiddleware):
+            @property
+            def enabled(self) -> bool:
+                return True
 
-                # 2. Call next middleware/target
-                result = await call_next(value, **kwargs)
+            async def pre_invoke(self, context: PreInvokeContext) -> PreInvokeContext | None:
+                print(f"Current args: {context.modified_args}")
+                print(f"Original args: {context.original_args}")
+                return None  # Pass through unchanged
 
-                # 3. Postprocess
-                print(f"Output: {result}")
-
-                # 4. Continue
-                return result
+            async def post_invoke(self, context: PostInvokeContext) -> PostInvokeContext | None:
+                print(f"Output: {context.output}")
+                return None  # Pass through unchanged
 
     Attributes:
         is_final: If True, this middleware terminates the chain. No subsequent
@@ -101,6 +148,80 @@ class Middleware(ABC):
     def __init__(self, *, is_final: bool = False) -> None:
         self._is_final = is_final
 
+    # ==================== Abstract Members ====================
+
+    @property
+    @abstractmethod
+    def enabled(self) -> bool:
+        """Whether this middleware should execute.
+        """
+        ...
+
+    @abstractmethod
+    async def pre_invoke(self, context: PreInvokeContext) -> PreInvokeContext | None:
+        """Transform inputs before execution.
+
+        Called by specialized middleware invoke methods (e.g., function_middleware_invoke).
+        Use to validate, transform, or augment inputs.
+
+        Args:
+            context: Pre-invoke context (Pydantic model) containing:
+                - function_context: Static function metadata (frozen)
+                - original_args: What entered the middleware chain (frozen)
+                - original_kwargs: What entered the middleware chain (frozen)
+                - args: Current args (mutable)
+                - kwargs: Current kwargs (mutable)
+
+        Returns:
+            PreInvokeContext: Return the (modified) context to signal changes
+            None: Pass through unchanged (framework uses current context state)
+
+        Note:
+            Frozen fields (original_args, original_kwargs) cannot be modified.
+            Attempting to modify them raises ValidationError.
+
+        Raises:
+            Any exception to abort execution
+        """
+        ...
+
+    @abstractmethod
+    async def post_invoke(self, context: PostInvokeContext) -> PostInvokeContext | None:
+        """Transform output after execution.
+
+        Called by specialized middleware invoke methods (e.g., function_middleware_invoke).
+        For streaming, called per-chunk. Use to validate, transform, or augment outputs.
+
+        Args:
+            context: Post-invoke context (Pydantic model) containing:
+                - function_context: Static function metadata (frozen)
+                - original_args: What entered the middleware chain (frozen)
+                - original_kwargs: What entered the middleware chain (frozen)
+                - args: What the function received (frozen)
+                - kwargs: What the function received (frozen)
+                - output: Current output value (mutable)
+
+        Returns:
+            PostInvokeContext: Return the (modified) context to signal changes
+            None: Pass through unchanged (framework uses current context.output)
+
+        Note:
+            Only output is mutable. All other fields are frozen.
+
+        Example::
+
+            async def post_invoke(self, context: PostInvokeContext) -> PostInvokeContext | None:
+                # Wrap the output
+                context.output = {"result": context.output, "processed": True}
+                return context  # Signal modification
+
+        Raises:
+            Any exception to abort and propagate error
+        """
+        ...
+
+    # ==================== Properties ====================
+
     @property
     def is_final(self) -> bool:
         """Whether this middleware terminates the chain.
@@ -110,6 +231,8 @@ class Middleware(ABC):
         """
 
         return self._is_final
+
+    # ==================== Default Invoke Methods ====================
 
     async def middleware_invoke(self,
                                 value: Any,
@@ -188,6 +311,8 @@ class Middleware(ABC):
 __all__ = [
     "CallNext",
     "CallNextStream",
-    "Middleware",
     "FunctionMiddlewareContext",
+    "Middleware",
+    "PostInvokeContext",
+    "PreInvokeContext",
 ]

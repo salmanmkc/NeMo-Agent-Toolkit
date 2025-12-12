@@ -44,6 +44,16 @@ class _TestMiddleware(FunctionMiddleware):
         self.test_param = test_param
         self.call_order = call_order
 
+    @property
+    def enabled(self) -> bool:
+        return True
+
+    async def pre_invoke(self, context):
+        return None
+
+    async def post_invoke(self, context):
+        return None
+
     async def function_middleware_invoke(self, value, call_next, context):
         self.call_order.append(f"{self.test_param}_pre")
         result = await call_next(value)
@@ -646,6 +656,16 @@ class TestFunctionGroupMiddlewares:
             def __init__(self, name: str):
                 super().__init__()
                 self.name = name
+
+            @property
+            def enabled(self) -> bool:
+                return True
+
+            async def pre_invoke(self, context):
+                return None
+
+            async def post_invoke(self, context):
+                return None
 
             async def function_middleware_invoke(self, value, call_next, context):
                 results.append(f"{self.name}_pre")

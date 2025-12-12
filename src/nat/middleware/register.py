@@ -17,3 +17,4 @@
 
 from nat.middleware.cache import register as register_cache
 from nat.middleware.dynamic import register as register_dynamic
+from nat.middleware.logging import register as register_logging

@@ -12,15 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Configuration for logging middleware."""
 
-from nat.function_policy.interface import FunctionPolicyBase
-from nat.function_policy.interface import PolicyConfigT
-from nat.function_policy.interface import PostInvokeContext
-from nat.function_policy.interface import PreInvokeContext
+from pydantic import Field
 
-__all__ = [
-    "FunctionPolicyBase",
-    "PolicyConfigT",
-    "PreInvokeContext",
-    "PostInvokeContext",
-]
+from nat.middleware.dynamic.dynamic_middleware_config import DynamicMiddlewareConfig
+
+
+class LoggingMiddlewareConfig(DynamicMiddlewareConfig, name="logging_middleware"):
+    """Configuration for logging middleware.
+
+    Extends DynamicMiddlewareConfig to inherit all dynamic discovery features
+    (register_llms, register_workflow_functions, and so on) and the enabled toggle.
+    """
+
+    log_level: str = Field(default="INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR)")

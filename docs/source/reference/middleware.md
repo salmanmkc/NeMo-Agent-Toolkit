@@ -80,96 +80,107 @@ async def my_function(config, builder):
 
 ### Step 1: Define the Configuration
 
-Create a configuration class inheriting from `FunctionMiddlewareBaseConfig`:
+Create a configuration class inheriting from `DynamicMiddlewareConfig`:
 
 ```python
 from pydantic import Field
-from nat.data_models.middleware import FunctionMiddlewareBaseConfig
+from nat.middleware.dynamic.dynamic_middleware_config import DynamicMiddlewareConfig
 
 
-class LoggingMiddlewareConfig(FunctionMiddlewareBaseConfig, name="logging_middleware"):
-  """Configuration for logging middleware."""
+class LoggingMiddlewareConfig(DynamicMiddlewareConfig, name="logging_middleware"):
+    """Configuration for logging middleware.
 
-  log_level: str = Field(
-    default="INFO",
-    description="Logging level (DEBUG, INFO, WARNING, ERROR)"
-  )
-  include_inputs: bool = Field(
-    default=True,
-    description="Whether to log function inputs"
-  )
-  include_outputs: bool = Field(
-    default=True,
-    description="Whether to log function outputs"
-  )
+    Inherits dynamic discovery features (register_llms, register_workflow_functions,
+    and so on) and the enabled toggle from DynamicMiddlewareConfig.
+    """
+
+    log_level: str = Field(
+        default="INFO",
+        description="Logging level (DEBUG, INFO, WARNING, ERROR)"
+    )
 ```
+
+The `DynamicMiddlewareConfig` base class provides:
+
+- `enabled`: Toggle middleware on or off at runtime through configuration
+- `register_llms`: Automatically intercept LLM calls
+- `register_workflow_functions`: Automatically intercept workflow functions
+- `register_agents`: Automatically intercept agent calls
+- Additional dynamic discovery options
 
 ### Step 2: Implement the Middleware Class
 
-Create the middleware class inheriting from `FunctionMiddleware`:
+Create the middleware class inheriting from `DynamicFunctionMiddleware`:
 
 ```python
-from nat.middleware import FunctionMiddleware, FunctionMiddlewareContext
-from nat.middleware import CallNext, CallNextStream
 import logging
-from typing import Any
-from collections.abc import AsyncIterator
+
+from nat.middleware.dynamic.dynamic_function_middleware import DynamicFunctionMiddleware
+from nat.middleware.middleware import PreInvokeContext, PostInvokeContext
+
+logger = logging.getLogger(__name__)
 
 
-class LoggingMiddleware(FunctionMiddleware):
-    """Logging middleware that tracks function calls."""
+class LoggingMiddleware(DynamicFunctionMiddleware):
+    """Logging middleware that tracks function calls.
 
-    def __init__(self, *, log_level: str, include_inputs: bool, include_outputs: bool):
-        super().__init__(is_final=False)
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(getattr(logging, log_level.upper()))
-        self.include_inputs = include_inputs
-        self.include_outputs = include_outputs
+    Extends DynamicFunctionMiddleware to get automatic chain orchestration
+    and dynamic discovery features. Custom logic is implemented through
+    the pre_invoke and post_invoke hooks.
+    """
 
-    async def function_middleware_invoke(
-        self,
-        *args: Any,
-        call_next: CallNext,
-        context: FunctionMiddlewareContext,
-        **kwargs: Any
-    ) -> Any:
-        """Middleware for single-output invocations."""
-        # Phase 1: Preprocess
-        if self.include_inputs:
-            self.logger.info(f"Calling {context.name} with args: {args}")
+    async def pre_invoke(self, context: PreInvokeContext) -> PreInvokeContext | None:
+        """Log inputs before function execution.
 
-        # Phase 2: Call next (forward all args and kwargs)
-        result = await call_next(*args, **kwargs)
+        Args:
+            context: Pre-invoke context containing:
+                - function_context: Static function metadata (frozen)
+                - original_args: Original function arguments before transformation (frozen)
+                - original_kwargs: Original function keyword arguments before transformation (frozen)
+                - modified_args: Current function arguments (mutable)
+                - modified_kwargs: Current function keyword arguments (mutable)
 
-        # Phase 3: Postprocess
-        if self.include_outputs:
-            self.logger.info(f"Function {context.name} returned: {result}")
+        Returns:
+            PreInvokeContext if modified, or None to pass through unchanged
+        """
+        log_level = getattr(logging, self._config.log_level.upper(), logging.INFO)
+        logger.log(log_level, f"Calling {context.function_context.name} with args: {context.modified_args}")
 
-        # Phase 4: Continue
-        return result
+        # Optional: Check if args were modified by prior middleware
+        if context.modified_args != context.original_args:
+            logger.log(log_level, f"  (original args were: {context.original_args})")
 
-    async def function_middleware_stream(
-        self,
-        *args: Any,
-        call_next: CallNextStream,
-        context: FunctionMiddlewareContext,
-        **kwargs: Any
-    ) -> AsyncIterator[Any]:
-        """Middleware for streaming invocations."""
-        # Phase 1: Preprocess
-        if self.include_inputs:
-            self.logger.info(f"Streaming call to {context.name} with args: {args}")
+        return None  # Pass through unchanged
 
-        # Phase 2-3: Call next and yield chunks
-        chunk_count = 0
-        async for chunk in call_next(*args, **kwargs):
-            chunk_count += 1
-            yield chunk
+    async def post_invoke(self, context: PostInvokeContext) -> PostInvokeContext | None:
+        """Log outputs after function execution.
 
-        # Phase 4: Cleanup
-        if self.include_outputs:
-            self.logger.info(f"Streamed {chunk_count} chunks from {context.name}")
+        Args:
+            context: Post-invoke context (Pydantic model) containing:
+                - function_context: Static function metadata (frozen)
+                - original_args: Original function arguments before transformation (frozen)
+                - original_kwargs: Original function keyword arguments before transformation (frozen)
+                - modified_args: Function arguments after pre-invoke transforms (frozen)
+                - modified_kwargs: Function keyword arguments after pre-invoke transforms (frozen)
+                - output: Current output value (mutable)
+
+        Returns:
+            PostInvokeContext if modified, or None to pass through unchanged
+        """
+        log_level = getattr(logging, self._config.log_level.upper(), logging.INFO)
+        logger.log(log_level, f"Function {context.function_context.name} returned: {context.output}")
+        return None  # Pass through unchanged
 ```
+
+Key benefits of extending `DynamicFunctionMiddleware`:
+
+- **No manual chain handling**: The base class manages `call_next` orchestration automatically
+- **Separate hooks**: `pre_invoke` handles input logging, `post_invoke` handles output logging
+- **Chain awareness**: Access `original_args` to see original values versus current `modified_args`
+- **Frozen originals**: `original_args`/`original_kwargs` are immutable (Pydantic enforced)
+- **Mutable current values**: Modify `modified_args`/`modified_kwargs`/`output` in place, return context to signal changes
+- **Streaming support built-in**: `post_invoke` is called per-chunk for streaming functions
+- **Config access**: Use `self._config` to access your configuration values
 
 ### Step 3: Register the Component
 
@@ -192,11 +203,7 @@ async def logging_middleware(config: LoggingMiddlewareConfig, builder: Builder):
     Yields:
         A configured logging middleware instance
     """
-    yield LoggingMiddleware(
-        log_level=config.log_level,
-        include_inputs=config.include_inputs,
-        include_outputs=config.include_outputs
-    )
+    yield LoggingMiddleware(config=config, builder=builder)
 ```
 
 ### Step 4: Configure in YAML
@@ -208,8 +215,10 @@ middleware:
   request_logger:
     _type: logging_middleware
     log_level: DEBUG
-    include_inputs: true
-    include_outputs: true
+    enabled: true  # Inherited from DynamicMiddlewareConfig
+    # Dynamic discovery options (inherited):
+    # register_llms: true
+    # register_workflow_functions: true
 
 functions:
   my_api_function:
@@ -505,19 +514,25 @@ Test middleware in isolation:
 ```python
 import pytest
 from unittest.mock import MagicMock
+from nat.middleware.middleware import FunctionMiddlewareContext, PreInvokeContext, PostInvokeContext
 
 
 @pytest.mark.asyncio
 async def test_logging_middleware():
     """Test logging middleware logs correctly."""
-    middleware = LoggingMiddleware(
-        log_level="DEBUG",
-        include_inputs=True,
-        include_outputs=True
-    )
+    # Create a mock config
+    mock_config = MagicMock()
+    mock_config.log_level = "DEBUG"
+    mock_config.enabled = True
 
-    # Mock context
-    context = FunctionMiddlewareContext(
+    # Create a mock builder
+    mock_builder = MagicMock()
+
+    # Create middleware instance
+    middleware = LoggingMiddleware(config=mock_config, builder=mock_builder)
+
+    # Mock function context (static metadata only - no args/kwargs)
+    function_context = FunctionMiddlewareContext(
         name="test_fn",
         config=MagicMock(),
         description="Test",
@@ -526,15 +541,38 @@ async def test_logging_middleware():
         stream_output_schema=None
     )
 
-    # Mock call_next (accepts *args, **kwargs)
-    async def mock_next(*args, **kwargs):
-        return {"result": args[0] * 2}
-
-    # Test middleware
-    result = await middleware.function_middleware_invoke(
-        5, call_next=mock_next, context=context
+    # Test pre_invoke (should return None for pass-through)
+    pre_context = PreInvokeContext(
+        function_context=function_context,
+        original_args=(5,),        # Frozen - original function args
+        original_kwargs={},        # Frozen - original function kwargs
+        modified_args=(5,),        # Mutable - current args
+        modified_kwargs={}         # Mutable - current kwargs
     )
-    assert result == {"result": 10}
+    result = await middleware.pre_invoke(pre_context)
+    assert result is None  # Pass-through, no modification
+
+    # Test post_invoke (should return None for pass-through)
+    post_context = PostInvokeContext(
+        function_context=function_context,
+        original_args=(5,),        # Frozen
+        original_kwargs={},        # Frozen
+        modified_args=(5,),        # Frozen - what function received
+        modified_kwargs={},        # Frozen
+        output={"result": 10}      # Mutable
+    )
+    result = await middleware.post_invoke(post_context)
+    assert result is None  # Pass-through, no modification
+
+    # Test detecting modified args
+    pre_context_modified = PreInvokeContext(
+        function_context=function_context,
+        original_args=(5,),        # Original
+        original_kwargs={},
+        modified_args=(10,),       # Modified - different from original_args
+        modified_kwargs={}
+    )
+    # Middleware can detect: pre_context_modified.modified_args != pre_context_modified.original_args
 ```
 
 ### Integration Testing

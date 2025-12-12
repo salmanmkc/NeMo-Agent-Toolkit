@@ -40,7 +40,7 @@ class _TestOutput(BaseModel):
 
 @pytest.fixture
 def middleware_context():
-    """Create a test FunctionMiddlewareContext."""
+    """Create a test FunctionMiddlewareContext (static metadata only)."""
     return FunctionMiddlewareContext(name="test_function",
                                      config=MagicMock(),
                                      description="Test function",

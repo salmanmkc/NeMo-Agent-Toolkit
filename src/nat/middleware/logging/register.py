@@ -12,23 +12,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Registration for logging function policy."""
+"""Registration for logging middleware."""
 
 from nat.builder.builder import Builder
-from nat.cli.register_workflow import register_function_policy
-from nat.function_policy.logging.logging_policy import LoggingPolicy
-from nat.function_policy.logging.logging_policy_config import LoggingPolicyConfig
+from nat.cli.register_workflow import register_middleware
+from nat.middleware.logging.logging_middleware import LoggingMiddleware
+from nat.middleware.logging.logging_middleware_config import LoggingMiddlewareConfig
 
 
-@register_function_policy(config_type=LoggingPolicyConfig)
-async def logging_policy(config: LoggingPolicyConfig, builder: Builder):
-    """Build a logging policy from configuration.
+@register_middleware(config_type=LoggingMiddlewareConfig)
+async def logging_middleware(config: LoggingMiddlewareConfig, builder: Builder):
+    """Build a logging middleware from configuration.
 
     Args:
-        config: The logging policy configuration
-        builder: The workflow builder (unused but required by component pattern)
+        config: The logging middleware configuration
+        builder: The workflow builder
 
     Yields:
-        A configured logging policy instance
+        A configured logging middleware instance
     """
-    yield LoggingPolicy(config=config)
+    yield LoggingMiddleware(config=config, builder=builder)

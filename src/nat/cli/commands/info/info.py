@@ -17,8 +17,6 @@ import click
 
 from nat.cli.commands.info.list_channels import list_channels
 from nat.cli.commands.info.list_components import list_components
-from nat.cli.commands.info.list_function_policies import list_function_policies
-from nat.cli.commands.info.list_function_policies import show_function_policy
 
 
 @click.group(name=__name__, invoke_without_command=False, help="Provide information about the local NAT environment.")
@@ -31,8 +29,6 @@ def info_command(**kwargs):
 
 info_command.add_command(list_components, name="components")
 info_command.add_command(list_channels, "channels")
-info_command.add_command(list_function_policies, name="function-policies")
-info_command.add_command(show_function_policy, name="function-policy")
 
 
 @click.command(
