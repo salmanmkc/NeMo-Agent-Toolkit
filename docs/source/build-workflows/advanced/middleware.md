@@ -104,19 +104,19 @@ The `DynamicMiddlewareConfig` base class provides the following fields:
 
 **Enable/Disable:**
 
-- `enabled` (bool, default=`True`): Toggle middleware on or off at runtime through configuration
+- `enabled` (`bool`, default=`True`): Toggle middleware on or off at runtime through configuration
 
 **Auto-Discovery Flags:**
 
 When set to `True`, these flags automatically intercept all components of that type:
 
-- `register_llms` (bool, default=`False`): Auto-discover and intercept all LLM component functions
-- `register_embedders` (bool, default=`False`): Auto-discover and intercept all embedder component functions
-- `register_retrievers` (bool, default=`False`): Auto-discover and intercept all retriever component functions
-- `register_memory` (bool, default=`False`): Auto-discover and intercept all memory provider component functions
-- `register_object_stores` (bool, default=`False`): Auto-discover and intercept all object store component functions
-- `register_auth_providers` (bool, default=`False`): Auto-discover and intercept all authentication provider component functions
-- `register_workflow_functions` (bool, default=`False`): Auto-discover and intercept all workflow functions
+- `register_llms` (`bool`, default=`False`): Auto-discover and intercept all LLM component functions
+- `register_embedders` (`bool`, default=`False`): Auto-discover and intercept all embedder component functions
+- `register_retrievers` (`bool`, default=`False`): Auto-discover and intercept all retriever component functions
+- `register_memory` (`bool`, default=`False`): Auto-discover and intercept all memory provider component functions
+- `register_object_stores` (`bool`, default=`False`): Auto-discover and intercept all object store component functions
+- `register_auth_providers` (`bool`, default=`False`): Auto-discover and intercept all authentication provider component functions
+- `register_workflow_functions` (`bool`, default=`False`): Auto-discover and intercept all workflow functions
 
 **Explicit Component References:**
 
@@ -129,7 +129,7 @@ For fine-grained control, specify exactly which components to intercept (alterna
 - `object_stores` (list, default=`[]`): Specific object store component names to intercept
 - `auth_providers` (list, default=`[]`): Specific authentication provider component names to intercept
 
-**Function Allowlists:**
+**Function Allow Lists:**
 
 - `allowed_component_functions` (object, default=`None`): Controls which methods on each component type can be wrapped. When `None`, uses built-in defaults. Provide to extend the defaults with additional method names:
   - `llms` (set of strings): Additional LLM methods to allow
@@ -139,7 +139,7 @@ For fine-grained control, specify exactly which components to intercept (alterna
   - `object_stores` (set of strings): Additional object store methods to allow
   - `authentication` (set of strings): Additional authentication methods to allow
 
-**How toggles and allowlists interact:**
+**How toggles and allow lists interact:**
 
 1. Auto-discovery flags (`register_*`) control *which components* are intercepted
 2. Explicit references (`llms`, `embedders`, and so on) provide fine-grained component selection
@@ -233,7 +233,7 @@ Key benefits of extending `DynamicFunctionMiddleware`:
 - **Frozen originals**: `original_args`/`original_kwargs` are immutable (Pydantic enforced)
 - **Mutable current values**: Modify `modified_args`/`modified_kwargs`/`output` in place, return context to signal changes
 - **Streaming support built-in**: `post_invoke` is called per-chunk for streaming functions
-- **Config access**: Use `self._config` to access your configuration values
+- **Configuration access**: Use `self._config` to access your configuration values
 
 ### Step 3: Register the Component
 
@@ -800,6 +800,6 @@ Solution: Ensure the register module is imported. NAT automatically imports `nat
 
 ## See Also
 
-- [Writing Custom Functions](../extend/functions.md)
-- [Function Groups](../extend/function-groups.md)
-- [Plugin System](../extend/plugins.md)
+- [Writing Custom Functions](../../extend/custom-components/custom-functions/functions.md)
+- [Function Groups](../../extend/custom-components/custom-functions/function-groups.md)
+- [Plugin System](../../extend/plugins.md)
