@@ -1670,10 +1670,10 @@ async def register_test_middleware(config: TMiddlewareConfig, b: Builder):
         def enabled(self) -> bool:
             return True
 
-        async def pre_invoke(self, context):
+        async def pre_invoke(self, _context):
             return None
 
-        async def post_invoke(self, context):
+        async def post_invoke(self, _context):
             return None
 
     if config.raise_error:

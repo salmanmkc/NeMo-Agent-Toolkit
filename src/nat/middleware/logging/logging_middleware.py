@@ -12,12 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Logging middleware that logs function inputs and outputs.
-
-This middleware demonstrates the pattern for custom pre/post invoke logic
-using DynamicFunctionMiddleware. Custom logic is implemented by overriding
-the `pre_invoke` and `post_invoke` methods.
-"""
 
 import logging
 

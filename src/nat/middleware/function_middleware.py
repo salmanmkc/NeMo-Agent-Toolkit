@@ -26,14 +26,6 @@ Middleware executes in the order provided and can optionally be marked as *final
 A final middleware terminates the chain, preventing subsequent middleware or the
 wrapped target from running unless the final middleware explicitly delegates to
 the next callable.
-
-FunctionMiddleware inherits three abstract members from Middleware that must be implemented:
-- enabled: Property that returns whether middleware should run
-- pre_invoke: Transform inputs before function execution
-- post_invoke: Transform outputs after function execution
-
-The framework checks ``enabled`` before invoking any middleware methods.
-If disabled, the middleware is skipped entirely.
 """
 
 from __future__ import annotations

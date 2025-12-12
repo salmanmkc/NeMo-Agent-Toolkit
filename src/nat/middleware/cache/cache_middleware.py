@@ -86,18 +86,8 @@ class CacheMiddleware(FunctionMiddleware):
 
     @property
     def enabled(self) -> bool:
-        """Check if caching should be enabled based on configuration and context."""
-        if self._enabled_mode == "always":
-            return True
-
-        # For "eval" mode, only enable when in evaluation context
-        try:
-            context_state = ContextState.get()
-            ctx = Context(context_state)
-            return ctx.is_evaluating
-        except Exception:
-            logger.warning("Failed to get context for cache decision", exc_info=True)
-            return False
+        """Middleware always enabled."""
+        return True
 
     async def pre_invoke(self, context: PreInvokeContext) -> PreInvokeContext | None:
         """Not used - CacheMiddleware overrides function_middleware_invoke."""
@@ -108,6 +98,20 @@ class CacheMiddleware(FunctionMiddleware):
         return None
 
     # ==================== Cache Logic ====================
+
+    def _should_cache(self) -> bool:
+        """Check if caching should be enabled based on the current context."""
+        if self._enabled_mode == "always":
+            return True
+
+        # Get the current context and check if we're in evaluation mode
+        try:
+            context_state = ContextState.get()
+            context = Context(context_state)
+            return context.is_evaluating
+        except Exception:
+            logger.warning("Failed to get context for cache decision", exc_info=True)
+            return False
 
     def _serialize_input(self, value: Any) -> str | None:
         """Serialize the input value to a string for caching.
@@ -179,8 +183,8 @@ class CacheMiddleware(FunctionMiddleware):
         Returns:
             The cached output if found, otherwise the fresh output
         """
-        # Defense-in-depth: check enabled in case of direct invocation
-        if not self.enabled:
+        # Check if caching should be enabled for this invocation
+        if not self._should_cache():
             return await call_next(*args, **kwargs)
 
         # Use first arg as cache key (primary input)

@@ -169,8 +169,8 @@ class Middleware(ABC):
                 - function_context: Static function metadata (frozen)
                 - original_args: What entered the middleware chain (frozen)
                 - original_kwargs: What entered the middleware chain (frozen)
-                - args: Current args (mutable)
-                - kwargs: Current kwargs (mutable)
+                - modified_args: Current args (mutable)
+                - modified_kwargs: Current kwargs (mutable)
 
         Returns:
             PreInvokeContext: Return the (modified) context to signal changes
@@ -197,8 +197,8 @@ class Middleware(ABC):
                 - function_context: Static function metadata (frozen)
                 - original_args: What entered the middleware chain (frozen)
                 - original_kwargs: What entered the middleware chain (frozen)
-                - args: What the function received (frozen)
-                - kwargs: What the function received (frozen)
+                - modified_args: What the function received (frozen)
+                - modified_kwargs: What the function received (frozen)
                 - output: Current output value (mutable)
 
         Returns:

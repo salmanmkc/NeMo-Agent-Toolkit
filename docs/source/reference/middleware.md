@@ -103,10 +103,13 @@ class LoggingMiddlewareConfig(DynamicMiddlewareConfig, name="logging_middleware"
 The `DynamicMiddlewareConfig` base class provides:
 
 - `enabled`: Toggle middleware on or off at runtime through configuration
-- `register_llms`: Automatically intercept LLM calls
+- `register_llms`: Automatically intercept LLM component functions
+- `register_embedders`: Automatically intercept embedder component functions
+- `register_retrievers`: Automatically intercept retriever component functions
+- `register_memory`: Automatically intercept memory provider component functions
+- `register_object_stores`: Automatically intercept object store component functions
+- `register_auth_providers`: Automatically intercept authentication provider component functions
 - `register_workflow_functions`: Automatically intercept workflow functions
-- `register_agents`: Automatically intercept agent calls
-- Additional dynamic discovery options
 
 ### Step 2: Implement the Middleware Class
 

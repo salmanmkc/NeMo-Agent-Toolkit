@@ -95,8 +95,8 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
                 - function_context: Static function metadata (frozen)
                 - original_args: What entered the middleware chain (frozen)
                 - original_kwargs: What entered the middleware chain (frozen)
-                - args: Current args (mutable)
-                - kwargs: Current kwargs (mutable)
+                - modified_args: Current args (mutable)
+                - modified_kwargs: Current kwargs (mutable)
 
         Returns:
             PreInvokeContext: Return the (modified) context to signal changes
@@ -115,8 +115,8 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
                 - function_context: Static function metadata (frozen)
                 - original_args: What entered the middleware chain (frozen)
                 - original_kwargs: What entered the middleware chain (frozen)
-                - args: What the function received (frozen)
-                - kwargs: What the function received (frozen)
+                - modified_args: What the function received (frozen)
+                - modified_kwargs: What the function received (frozen)
                 - output: Current output value (mutable)
 
         Returns:
@@ -158,8 +158,11 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         for function_name in all_functions:
             try:
                 self._register_component_function(discovered_component, function_name)
-            except Exception as e:
-                logger.debug("Failed to register component function '%s' on LLM '%s': %s", function_name, llm_name, e)
+            except Exception:
+                logger.debug("Failed to register component function '%s' on LLM '%s'",
+                             function_name,
+                             llm_name,
+                             exc_info=True)
 
         return llm_client
 
@@ -195,11 +198,11 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         for function_name in all_functions:
             try:
                 self._register_component_function(discovered_component, function_name)
-            except Exception as e:
-                logger.debug("Failed to register component function '%s' on embedder '%s': %s",
+            except Exception:
+                logger.debug("Failed to register component function '%s' on embedder '%s'",
                              function_name,
                              embedder_name,
-                             e)
+                             exc_info=True)
 
         return embedder_client
 
@@ -234,11 +237,11 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         for function_name in all_functions:
             try:
                 self._register_component_function(discovered_component, function_name)
-            except Exception as e:
-                logger.debug("Failed to register component function '%s' on retriever '%s': %s",
+            except Exception:
+                logger.debug("Failed to register component function '%s' on retriever '%s'",
                              function_name,
                              retriever_name,
-                             e)
+                             exc_info=True)
 
         return retriever_client
 
@@ -272,11 +275,11 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         for function_name in all_functions:
             try:
                 self._register_component_function(discovered_component, function_name)
-            except Exception as e:
-                logger.debug("Failed to register component function '%s' on memory '%s': %s",
+            except Exception:
+                logger.debug("Failed to register component function '%s' on memory '%s'",
                              function_name,
                              memory_name,
-                             e)
+                             exc_info=True)
 
         return memory_client
 
@@ -312,11 +315,11 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         for function_name in all_functions:
             try:
                 self._register_component_function(discovered_component, function_name)
-            except Exception as e:
-                logger.debug("Failed to register component function '%s' on object store '%s': %s",
+            except Exception:
+                logger.debug("Failed to register component function '%s' on object store '%s'",
                              function_name,
                              object_store_name,
-                             e)
+                             exc_info=True)
 
         return store_client
 
@@ -352,11 +355,11 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
         for function_name in all_functions:
             try:
                 self._register_component_function(discovered_component, function_name)
-            except Exception as e:
-                logger.debug("Failed to register component function '%s' on auth provider '%s': %s",
+            except Exception:
+                logger.debug("Failed to register component function '%s' on auth provider '%s'",
                              function_name,
                              auth_provider_name,
-                             e)
+                             exc_info=True)
 
         return auth_client
 
@@ -785,7 +788,7 @@ class DynamicFunctionMiddleware(FunctionMiddleware):
                 functions.add(function_name)
 
             except Exception:
-                # Skip functions that raise errors during introspection
+                logger.debug("Skipping function '%s' due to introspection error", function_name, exc_info=True)
                 continue
 
         return functions
