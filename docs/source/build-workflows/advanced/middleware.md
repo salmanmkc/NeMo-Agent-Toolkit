@@ -100,16 +100,66 @@ class LoggingMiddlewareConfig(DynamicMiddlewareConfig, name="logging_middleware"
     )
 ```
 
-The `DynamicMiddlewareConfig` base class provides:
+The `DynamicMiddlewareConfig` base class provides the following fields:
 
-- `enabled`: Toggle middleware on or off at runtime through configuration
-- `register_llms`: Automatically intercept LLM component functions
-- `register_embedders`: Automatically intercept embedder component functions
-- `register_retrievers`: Automatically intercept retriever component functions
-- `register_memory`: Automatically intercept memory provider component functions
-- `register_object_stores`: Automatically intercept object store component functions
-- `register_auth_providers`: Automatically intercept authentication provider component functions
-- `register_workflow_functions`: Automatically intercept workflow functions
+**Enable/Disable:**
+
+- `enabled` (bool, default=`True`): Toggle middleware on or off at runtime through configuration
+
+**Auto-Discovery Flags:**
+
+When set to `True`, these flags automatically intercept all components of that type:
+
+- `register_llms` (bool, default=`False`): Auto-discover and intercept all LLM component functions
+- `register_embedders` (bool, default=`False`): Auto-discover and intercept all embedder component functions
+- `register_retrievers` (bool, default=`False`): Auto-discover and intercept all retriever component functions
+- `register_memory` (bool, default=`False`): Auto-discover and intercept all memory provider component functions
+- `register_object_stores` (bool, default=`False`): Auto-discover and intercept all object store component functions
+- `register_auth_providers` (bool, default=`False`): Auto-discover and intercept all authentication provider component functions
+- `register_workflow_functions` (bool, default=`False`): Auto-discover and intercept all workflow functions
+
+**Explicit Component References:**
+
+For fine-grained control, specify exactly which components to intercept (alternative to auto-discovery):
+
+- `llms` (list, default=`[]`): Specific LLM component names to intercept
+- `embedders` (list, default=`[]`): Specific embedder component names to intercept
+- `retrievers` (list, default=`[]`): Specific retriever component names to intercept
+- `memory` (list, default=`[]`): Specific memory provider component names to intercept
+- `object_stores` (list, default=`[]`): Specific object store component names to intercept
+- `auth_providers` (list, default=`[]`): Specific authentication provider component names to intercept
+
+**Function Allowlists:**
+
+- `allowed_component_functions` (object, default=`None`): Controls which methods on each component type can be wrapped. When `None`, uses built-in defaults. Provide to extend the defaults with additional method names:
+  - `llms` (set of strings): Additional LLM methods to allow
+  - `embedders` (set of strings): Additional embedder methods to allow
+  - `retrievers` (set of strings): Additional retriever methods to allow
+  - `memory` (set of strings): Additional memory methods to allow
+  - `object_stores` (set of strings): Additional object store methods to allow
+  - `authentication` (set of strings): Additional authentication methods to allow
+
+**How toggles and allowlists interact:**
+
+1. Auto-discovery flags (`register_*`) control *which components* are intercepted
+2. Explicit references (`llms`, `embedders`, and so on) provide fine-grained component selection
+3. `allowed_component_functions` controls *which methods* on those components can be wrapped
+4. Only methods in the allowlist are wrapped; others pass through unchanged
+
+**Default Allowed Functions by Component Type:**
+
+The following methods are allowed by default for each component type. You can extend these lists through `allowed_component_functions`:
+
+| Component Type | Default Allowed Methods |
+|----------------|------------------------|
+| **LLMs** | `invoke`, `ainvoke`, `stream`, `astream` |
+| **Embedders** | `embed_query`, `aembed_query` |
+| **Retrievers** | `search` |
+| **Memory** | `search`, `add_items`, `remove_items` |
+| **Object Stores** | `put_object`, `get_object`, `delete_object`, `upsert_object` |
+| **Authentication** | `authenticate` |
+
+Workflow functions (`register_workflow_functions`) intercept the function's `ainvoke` and `astream` methods directly.
 
 ### Step 2: Implement the Middleware Class
 
