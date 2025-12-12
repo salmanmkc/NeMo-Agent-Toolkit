@@ -43,7 +43,6 @@ def mock_builder():
     """Create a mock builder with all required methods."""
     builder = Mock()
     builder._functions = {}
-    builder._function_policies = {}
     builder.get_llm = AsyncMock()
     builder.get_embedder = AsyncMock()
     builder.get_retriever = AsyncMock()
